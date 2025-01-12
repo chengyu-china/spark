@@ -5,9 +5,9 @@
 
 Word Count 的初衷是对文件中的单词做统计计数，打印出频次最高的 5 个词汇。首先我们要准备好数据文件(./exampledata/wikiOfSpark.txt)。然后读取文件，文件往往以行读去，word count 是对单词做统计，所以需要对行数据进行分词处理。然后就可以对单词做分组技术。 
 
-1. **读取内容:**调用 Spark 文件读取 API，加载 wikiOfSpark.txt 文件内容；
-2. **分词:**以行为单位，把句子打散为单词；
-3. **分组计数:**按照单词做分组计数。
+1. **读取内容**:调用 Spark 文件读取 API，加载 wikiOfSpark.txt 文件内容；
+2. **分词**:以行为单位，把句子打散为单词；
+3. **分组计数**:按照单词做分组计数。
 
 Scala 代码如下:
 ```
@@ -33,20 +33,20 @@ val wordCounts: RDD[(String, Int)] = kvRDD.reduceByKey((x, y) => x + y)
 wordCounts.map{case (k, v) => (v, k)}.sortByKey(false).take(5)
 
 ```
-代码中比较重要的一个概念是 **RDD：** Resilient Distributed Dataset，意思是“弹性分布式数据集”。 可以理解成是spark对分布式数据抽象的类，这个类有一系列方法，比如code 中的 flatMap，filter，map，reduceByKey，sortByKey，take。
+代码中比较重要的一个概念是 **RDD**: Resilient Distributed Dataset，意思是“弹性分布式数据集”。 可以理解成是spark对分布式数据抽象的类，这个类有一系列方法，比如code 中的 flatMap，filter，map，reduceByKey，sortByKey，take。
 
 ## RDD
 RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊括所有内存中和磁盘中的分布式数据实体。应用程序在 Spark 内部最终都会转化为 RDD 之上的分布式计算。在分布式计算环境中，一份完整的数据集，会按照某种规则切割成多份数据分片。这些数据分片被均匀地分发给集群内不同的计算节点和执行进程，从而实现分布式并行计算。RDD 中承载数据的基本单元是数据分片
 **RDD 的四大属性**
-1. **partitions:**数据分片。数据分片的分布，是由 RDD 的 partitioner 决定的。因此，RDD 的 partitions 属性，与它的 partitioner 属性是强相关的
-2. **partitioner:**分片切割规则，这个属性定义了把原始数据集切割成数据分片的切割规则
-3. **dependencies:**RDD 依赖，在数据形态的转换过程中，每个 RDD 都会通过 dependencies 属性来记录它所依赖的前一个、或多个 RDD，简称“父 RDD”。与此同时，RDD 使用 compute 属性，来记录从父 RDD 到当前 RDD 的转换操作。
+1. **partitions**:数据分片。数据分片的分布，是由 RDD 的 partitioner 决定的。因此，RDD 的 partitions 属性，与它的 partitioner 属性是强相关的
+2. **partitioner**:分片切割规则，这个属性定义了把原始数据集切割成数据分片的切割规则
+3. **dependencies**:RDD 依赖，在数据形态的转换过程中，每个 RDD 都会通过 dependencies 属性来记录它所依赖的前一个、或多个 RDD，简称“父 RDD”。与此同时，RDD 使用 compute 属性，来记录从父 RDD 到当前 RDD 的转换操作。
 ![DRRdependences](./pictures/RDDdependence.webp)
-4. **compute:**转换函数, 例如 word count 中的flatMap，filter，map等。
+4. **compute**:转换函数, 例如 word count 中的flatMap，filter，map等。
 
 **RDD 算子分类**
-1. **Transformations 类算子:** 使用 Transformations 类算子，定义并描述数据形态的转换过程。flatMap，filter，map，reduceByKey，sortByKey等。基于不同数据形态之间的转换，Spark会构建计算流图 DAG。
-2. **Actions 类算子:** 调用 Actions 类算子，将计算结果收集起来、或是物化到磁盘。 take。Spark 通过 Actions 类算子，以回溯的方式去触发执行这个计算流图。
+1. **Transformations 类算子**: 使用 Transformations 类算子，定义并描述数据形态的转换过程。flatMap，filter，map，reduceByKey，sortByKey等。基于不同数据形态之间的转换，Spark会构建计算流图 DAG。
+2. **Actions 类算子**: 调用 Actions 类算子，将计算结果收集起来、或是物化到磁盘。 take。Spark 通过 Actions 类算子，以回溯的方式去触发执行这个计算流图。
 
 换句话说，开发者调用的各类 Transformations 算子，并不立即执行计算，当且仅当开发者调用 Actions 算子时，之前调用的转换算子才会付诸执行。这就是“延迟计算” Lazy Evaluation。
 ![LazyEvaluarion](./pictures/LazyEvaluation.webp)
@@ -213,7 +213,7 @@ Driver 最核心的作用在于，解析用户代码、构建计算流图，然�
 想要理解分布式计算，就需要先理解spark 的调度，spark 的调度离不开上文提到的DAGScheduler、TaskScheduler 和 SchedulerBackend 也包括 Executors 中的的对象如 ExecutorBackend等。
 ![分布式计算组件](./pictures/分布式计算组件.webp)
 
-**DAGScheduler：**
+**DAGScheduler**:
 DAGScheduler把DAG 拆分为执行阶段 Stages，同时还要负责把 Stages 转化为任务集合 TaskSets。
 前面提到后 lazy Evaluation，只有在遇到Action 算子的时候才会回溯执行。
 所以 DAGScheduler是以 Actions 算子为起点，从后向前回溯 DAG，以 Shuffle 操作为边界去划分 Stages。以 Shuffle 为边界，从后向前以递归的方式，把逻辑上的计算图 DAG，转化成一个又一个 Stages。
