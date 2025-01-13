@@ -3,7 +3,7 @@
 
 ## word count 
 
-Word Count 的初衷是对文件中的单词做统计计数，打印出频次最高的 5 个词汇。首先我们要准备好数据文件(./exampledata/wikiOfSpark.txt)。然后读取文件，文件往往以行读去，word count 是对单词做统计，所以需要对行数据进行分词处理。然后就可以对单词做分组技术。 
+Word Count 的初衷是对文件中的单词做统计计数，打印出频次最高的 5 个词汇。首先我们要准备好数据文件(./exampledata/wikiOfSpark.txt)。然后读取文件，文件往往以行读取，word count 是对单词做统计，所以需要对行数据进行分词处理。然后就可以对单词做分组计数。 
 
 1. **读取内容**:调用 Spark 文件读取 API，加载 wikiOfSpark.txt 文件内容；
 2. **分词**:以行为单位，把句子打散为单词；
@@ -190,6 +190,131 @@ val rdd: RDD[(Key类型，Value类型)] = _
 rdd.sortByKey()
 ```
 
+### RDD 数据的准备、重分布与持久化
+
+**数据准备** union、sample
+
+1. union 用于把两个类型一致、但来源不同的 RDD 进行合并，从而构成一个统一的、更大的分布式数据集
+```
+// T：数据类型
+val rdd1: RDD[T] = _
+val rdd2: RDD[T] = _
+val rdd = rdd1.union(rdd2)
+// 或者rdd1 union rdd2
+
+```
+
+2. sample 算子用于对 RDD 做随机采样。sample 的参数比较多，分别是 withReplacement、fraction 和 seed。withReplacement 的类型是 Boolean，它的含义是“采样是否有放回”，如果这个参数的值是 true，那么采样结果中可能会包含重复的数据记录，相反，如果该值为 false。fraction 参数最好理解，它的类型是 Double，值域为 0 到 1，其含义是采样比例，也就是结果集与原数据集的尺寸比例。seed 参数是可选的，它的类型是 Long，也就是长整型，用于控制每次采样的结果是否一致
+```
+// 生成0到99的整型数组
+val arr = (0 until 100).toArray
+// 使用parallelize生成RDD
+val rdd = sc.parallelize(arr)
+ 
+// 不带seed，每次采样结果都不同
+rdd.sample(false, 0.1).collect
+// 结果集：Array(11, 13, 14, 39, 43, 63, 73, 78, 83, 88, 89, 90)
+rdd.sample(false, 0.1).collect
+// 结果集：Array(6, 9, 10, 11, 17, 36, 44, 53, 73, 74, 79, 97, 99)
+ 
+// 带seed，每次采样结果都一样
+rdd.sample(false, 0.1, 123).collect
+// 结果集：Array(3, 11, 26, 59, 82, 89, 96, 99)
+rdd.sample(false, 0.1, 123).collect
+// 结果集：Array(3, 11, 26, 59, 82, 89, 96, 99)
+ 
+// 有放回采样，采样结果可能包含重复值
+rdd.sample(true, 0.1, 456).collect
+// 结果集：Array(7, 11, 11, 23, 26, 26, 33, 41, 57, 74, 96)
+rdd.sample(true, 0.1, 456).collect
+// 结果集：Array(7, 11, 11, 23, 26, 26, 33, 41, 57, 74, 96)
+```
+
+
+**数据预处理** repartition、coalesce
+
+并行度，它实际上就是 RDD 的数据分区数量。RDD 的 partitions 属性，记录正是 RDD 的所有数据分区。因此，RDD 的并行度与其 partitions 属性相一致。 我们可以使用 repartition 算子提升或降低 RDD 的并行度。而 coalesce 算子则只能用于降低 RDD 并行度。
+
+1. repartition： 可以通过调用 repartition(n) 来随意调整 RDD 并行度。结合经验来说，把并行度设置为可用 CPU 的 2 到 3 倍，往往是个不错的开始。 例如，可分配给 Spark 作业的 Executors 个数为 N，每个 Executors 配置的 CPU 个数为 C，那么推荐设置的并行度坐落在 NC2 到 NC3 这个范围之间。 repartition 会引入 Shuffle。
+
+```
+// 生成0到99的整型数组
+val arr = (0 until 100).toArray
+// 使用parallelize生成RDD
+val rdd = sc.parallelize(arr)
+ 
+rdd.partitions.length
+// 4
+ 
+val rdd1 = rdd.repartition(2)
+rdd1.partitions.length
+// 2
+ 
+val rdd2 = rdd.repartition(8)
+rdd2.partitions.length
+// 8
+```
+给定任意一条数据记录，repartition 的计算过程都是先哈希、再取模，得到的结果便是该条数据的目标分区索引。对于绝大多数的数据记录，目标分区往往坐落在另一个 Executor、甚至是另一个节点之上，因此 Shuffle 自然也就不可避免。
+
+2. coalesce: 通过指定一个 Int 类型的形参，完成对 RDD 并行度的调整，即 coalesce (n). 只能用来降低并行度。coalesce 不会引入 Shuffle。
+```
+// 生成0到99的整型数组
+val arr = (0 until 100).toArray
+// 使用parallelize生成RDD
+val rdd = sc.parallelize(arr)
+ 
+rdd.partitions.length
+// 4
+ 
+val rdd1 = rdd.repartition(2)
+rdd1.partitions.length
+// 2
+ 
+val rdd2 = rdd.coalesce(2)
+rdd2.partitions.length
+// 2
+```
+coalesce 在降低并行度的计算中，它采取的思路是把同一个 Executor 内的不同数据分区进行合并，如此一来，数据并不需要跨 Executors、跨节点进行分发，因而自然不会引入 Shuffle。
+
+
+**数据收集** first、take、collect、saveAsTextFile
+1. first 用于收集 RDD 数据集中的任意一条数据记录。
+2. take(n: Int) 则用于收集多条记录，记录的数量由 Int 类型的参数 n 来指定。
+3. collect 拿到的是全量数据，也就是把 RDD 的计算结果全量地收集到 Driver 端。 collect 算子有两处性能隐患，一个是拉取数据过程中引入的网络开销，另一个 Driver 的 OOM（内存溢出，Out of Memory）。
+4. saveAsTextFile 直接调用 saveAsTextFile(path: String)。
+
+```
+import org.apache.spark.rdd.RDD
+val rootPath: String = _
+val file: String = s"${rootPath}/wikiOfSpark.txt"
+// 读取文件内容
+val lineRDD: RDD[String] = spark.sparkContext.textFile(file)
+ 
+lineRDD.first
+// res1: String = Apache Spark
+ 
+// 以行为单位做分词
+val wordRDD: RDD[String] = lineRDD.flatMap(line => line.split(" "))
+val cleanWordRDD: RDD[String] = wordRDD.filter(word => !word.equals(""))
+ 
+cleanWordRDD.take(3)
+// res2: Array[String] = Array(Apache, Spark, From)
+// 把RDD元素转换为（Key，Value）的形式
+val kvRDD: RDD[(String, Int)] = cleanWordRDD.map(word => (word, 1))
+// 按照单词做分组计数
+val wordCounts: RDD[(String, Int)] = kvRDD.reduceByKey((x, y) => x + y)
+ 
+wordCounts.collect
+// res3: Array[(String, Int)] = Array((Because,1), (Open,1), (impl...
+wordCounts.saveAsTextFile(targetPath)
+
+```
+
+
+
+![RDD算子](./pictures/RDD算子总结.webp)
+
+
 
 ## 分布式计算
 前面提到 spark 会根据RDD的数据转换构建数据流图，分布式计算则是把抽象的计算流图，转化为实实在在的分布式计算任务，然后以并行计算的方式交付执行。
@@ -267,11 +392,75 @@ Shuffle 会导致分布式数据集在集群内的分发，因而引入大量的
 在 word count 的例子中，在聚合计算的时候，会引入shuffle。 对于单词 spark而言，它可能分散在不同的Executors中，shuffle的作用就是把所有的单词spark 全部拉取到一个Executors中，进而完成聚合计算。
 ![wordcountshuffle](./pictures/wordcount%20shuffle.webp)
 
+如图，以 Shuffle 为边界，reduceByKey 的计算被切割为两个执行阶段。Shuffle 之前的 Stage 是 Map 阶段， Shuffle 之后的 Stage 是 Reduce 阶段。
+在 Map 阶段，每个 Executors 先把自己负责的数据分区做初步聚合（又叫 Map 端聚合、局部聚合）；在 Shuffle 环节，不同的单词被分发到不同节点的 Executors 中；最后的 Reduce 阶段，Executors 以单词为 Key 做第二次聚合（又叫全局聚合），从而完成统计计数的任务。
 
+**shuffle 的中间文件**
+map阶段是通过shuffle来和reduce阶段进行数据交换的，通过生产与消费 Shuffle 中间文件的方式，来完成集群范围内的数据交换。
+在 Map 执行阶段，每个 Task 都会生成包含 data 文件与 index 文件的 Shuffle 中间文件。Shuffle 文件的生成，是以 Map Task 为粒度的，Map 阶段有多少个 Map Task，就会生成多少份 Shuffle 中间文件。index 文件标记了 data 文件中的哪些记录，应该由下游 Reduce 阶段中的哪些 Task 消费。 index 文件，是用来标记目标分区所属数据记录的起始索引。
 
+![Shuffle](./pictures/wordcountshuffle.webp)
 
+在 Spark 中，Shuffle 环节实际的数据交换规则要比这复杂得多。数据交换规则又叫分区规则，因为它定义了分布式数据集在 Reduce 阶段如何划分数据分区。假设 Reduce 阶段有 N 个 Task，这 N 个 Task 对应着 N 个数据分区，那么在 Map 阶段，每条记录应该分发到哪个 Reduce Task，是由下面的公式来决定的。
+```
+P = Hash(Record Key) % N
+```
+**Shuffle 中间文件的生成过程，分为如下几个步骤** shuffle write
+1. 对于数据分区中的数据记录，逐一计算其目标分区，然后填充内存数据结构；
+2. 当数据结构填满后，如果分区中还有未处理的数据记录，就对结构中的数据记录按（目标分区 ID，Key）排序，将所有数据溢出到临时文件，同时清空数据结构；
+3. 重复前 2 个步骤，直到分区中所有的数据记录都被处理为止；
+4. 对所有临时文件和内存数据结构中剩余的数据记录做归并排序，生成数据文件和索引文件。
 
+**shuffle read**
+对于每一个 Map Task 生成的中间文件，其中的目标分区数量是由 Reduce 阶段的任务数量（又叫并行度）决定的。
 
+## spark 内存
+我们经常听到spark是内存计算，这是它的优势。那么spark 的内存是如何划分的呢？
 
+### Spark 内存区域划分
+对于任意一个 Executor 来说，Spark 会把内存分为 4 个区域，分别是 Reserved Memory、User Memory、Execution Memory 和 Storage Memory。
+![SparkMemory](./pictures/SparkMemory.webp)
 
+**Reserved Memory** 固定为 300MB，不受开发者控制，它是 Spark 预留的、用来存储各种 Spark 内部对象的内存区域；
+**User Memory** 用于存储开发者自定义的数据结构，例如 RDD 算子中引用的数组、列表、映射等等。
+**Execution Memory** 用来执行分布式任务。分布式任务的计算，主要包括数据的转换、过滤、映射、排序、聚合、归并等环节，而这些计算环节的内存消耗，统统来自于 Execution Memory。
+**Storage Memory** 用于缓存分布式数据集，比如 RDD Cache、广播变量等等
 
+其中 Execution Memory 和 Storage Memory 之间的抢占式的。抢占规则如下：
+1. 如果对方的内存空间有空闲，双方可以互相抢占；
+2. 对于 Storage Memory 抢占的 Execution Memory 部分，当分布式任务有计算需要时，Storage Memory 必须立即归还抢占的内存，涉及的缓存数据要么落盘、要么清除；
+3. 对于 Execution Memory 抢占的 Storage Memory 部分，即便 Storage Memory 有收回内存的需要，也必须要等到分布式任务执行完毕才能释放。
+
+另外我们也可以通过一些参数来配置spark内存。
+
+**spark.executor.memory**: 是绝对值，它指定了 Executor 进程的 JVM Heap 总大小
+**spark.memory.fraction**: 是比例值，用于标记 Spark 处理分布式数据集的内存总大小，这部分内存包括 Execution Memory 和 Storage Memory 两部分。
+**spark.memory.storageFraction**: 是比例值，用来进一步区分 Execution Memory 和 Storage Memory 的初始大小。
+
+![SparkMemoryConf](./pictures/SparkMemoryConf.webp)
+
+### RDD cache
+在word count的代码中有很多RDD，但是我们不可能对每一个RDD 都做cache 操作，但是当同一个 RDD 被引用多次时，就可以考虑对其进行 Cache，从而提升作业的执行效率。
+在之前的word count的代码中添加写入文件的操作，来演示如何使用RDD cache。
+```
+val wordCounts: RDD[(String, Int)] = kvRDD.reduceByKey((x, y) => x + y)
+
+wordCounts.cache # 使用cache算子告知Spark对wordCounts加缓存
+wordCounts.count # 触发wordCounts的计算，并将wordCounts缓存到内存
+
+wordCounts.map{case (k, v) => (v, k)}.sortByKey(false).take(5) 
+# 将分组计数结果落盘到文件val 
+targetPath: String = TargetOPath
+wordCounts.saveAsTextFile(targetPath)
+
+```
+如上述code 所示，只需要调用RDD的cache，和count 就可以实现对多次使用的RDD创建cache。我们前面提到过LazyEvaluation，所以只有在执行到count的时候，才会在内存创建RDD cache。
+
+在深层次看一看RDDcache。 cache 函数实际上会进一步调用 persist（MEMORY_ONLY）来完成计算。当我们在调用 wordCounts.cache时，实际上执行的命令是 wordCounts.persist(MEMORY_ONLY)。实际上使用wordCounts.persist可以更灵活的选择cache的存储介质、存储形式以及副本数量。 下图为存储级别分类。
+![Cache](./pictures/CacheStorage.webp)
+
+存储介质：数据缓存到内存还是磁盘，或是两者都有
+存储形式：数据内容是对象值还是字节数组，带 SER 字样的表示以序列化方式存储，不带 SER 则表示采用对象值
+副本数量：存储级别名字最后的数字代表拷贝数量，没有数字默认为 1 份副本。
+
+## 广播变量和累加器。
