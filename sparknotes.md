@@ -464,3 +464,4 @@ wordCounts.saveAsTextFile(targetPath)
 副本数量：存储级别名字最后的数字代表拷贝数量，没有数字默认为 1 份副本。
 
 ## 广播变量和累加器。
+不想整理，没意思。
