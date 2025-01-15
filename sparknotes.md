@@ -38,6 +38,7 @@ wordCounts.map{case (k, v) => (v, k)}.sortByKey(false).take(5)
 ## RDD
 RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊括所有内存中和磁盘中的分布式数据实体。应用程序在 Spark 内部最终都会转化为 RDD 之上的分布式计算。在分布式计算环境中，一份完整的数据集，会按照某种规则切割成多份数据分片。这些数据分片被均匀地分发给集群内不同的计算节点和执行进程，从而实现分布式并行计算。RDD 中承载数据的基本单元是数据分片
 **RDD 的四大属性**
+
 1. **partitions**:数据分片。数据分片的分布，是由 RDD 的 partitioner 决定的。因此，RDD 的 partitions 属性，与它的 partitioner 属性是强相关的
 2. **partitioner**:分片切割规则，这个属性定义了把原始数据集切割成数据分片的切割规则
 3. **dependencies**:RDD 依赖，在数据形态的转换过程中，每个 RDD 都会通过 dependencies 属性来记录它所依赖的前一个、或多个 RDD，简称“父 RDD”。与此同时，RDD 使用 compute 属性，来记录从父 RDD 到当前 RDD 的转换操作。
@@ -45,6 +46,7 @@ RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊
 4. **compute**:转换函数, 例如 word count 中的flatMap，filter，map等。
 
 **RDD 算子分类**
+
 1. **Transformations 类算子**: 使用 Transformations 类算子，定义并描述数据形态的转换过程。flatMap，filter，map，reduceByKey，sortByKey等。基于不同数据形态之间的转换，Spark会构建计算流图 DAG。
 2. **Actions 类算子**: 调用 Actions 类算子，将计算结果收集起来、或是物化到磁盘。 take。Spark 通过 Actions 类算子，以回溯的方式去触发执行这个计算流图。
 
@@ -52,6 +54,7 @@ RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊
 ![LazyEvaluarion](./pictures/LazyEvaluation.webp)
 
 **算子总结分类**
+
 ![Computes](./pictures/Compute.webp)
 
 ### 创建RDD
@@ -78,6 +81,7 @@ val lineRDD: RDD[String] = spark.sparkContext.textFile(file)
 ### RDD 内的数据转换: map、mapPartitions、flatMap、filter、mapPartitionsWithIndex
 
 **map**
+
 给定映射函数 f，map(f) 以元素为粒度对 RDD 做数据转换。其中 f 可以是带有明确签名的带名函数，也可以是匿名函数，它的形参类型必须与 RDD 的元素类型保持一致，而输出类型则任由开发者自行决定。
 word count 代码中
 ```
@@ -85,6 +89,7 @@ word count 代码中
 ```
 
 **mapPartitions** 以数据分区为粒度的数据转换
+
 mapPartitions，以数据分区为粒度，使用映射函数 f 对 RDD 进行数据转换
 ```
    val kvRDD: RDD[(String, Int)] = cleanWordRDD.mapPartitions( partition => {
@@ -103,6 +108,7 @@ mapPartitions，以数据分区为粒度，使用映射函数 f 对 RDD 进行�
 对于数据记录来说，凡是可以共享的操作，都可以用 mapPartitions 算子进行优化。
 
 **flatMap** 从元素到集合、再从集合到元素
+
 扁平化处理，去维度。 
 ```
    val wordRDD: RDD[String] = lineRDD.flatMap(line => line.split(" "))
@@ -121,9 +127,11 @@ filter 算子需要借助一个判定函数 f，才能实现对 RDD 的过滤转
 
 
 ### RDD 内的数据聚合: groupByKey、reduceByKey、aggregateByKey、sortByKey
+
 groupByKey、reduceByKey、aggregateByKey、sortByKey 他们只能作用到 Paired RDD，即元素类型为（Key，Value）键值对的 RDD。
 
 **groupByKey** 分组收集
+
 groupByKey 算子包含两步，即分组和收集。对于元素类型为（Key，Value）键值对的 Paired RDD，groupByKey 的功能就是对 Key 值相同的元素做分组，然后把相应的 Value 值，以集合的形式收集到一起。
 RDD[(Key, Value)]转换为 => RDD[(Key, Value 集合)]
 ```
@@ -278,6 +286,7 @@ coalesce 在降低并行度的计算中，它采取的思路是把同一个 Exec
 
 
 **数据收集** first、take、collect、saveAsTextFile
+
 1. first 用于收集 RDD 数据集中的任意一条数据记录。
 2. take(n: Int) 则用于收集多条记录，记录的数量由 Int 类型的参数 n 来指定。
 3. collect 拿到的是全量数据，也就是把 RDD 的计算结果全量地收集到 Driver 端。 collect 算子有两处性能隐患，一个是拉取数据过程中引入的网络开销，另一个 Driver 的 OOM（内存溢出，Out of Memory）。
@@ -317,6 +326,7 @@ wordCounts.saveAsTextFile(targetPath)
 
 
 ## 分布式计算
+
 前面提到 spark 会根据RDD的数据转换构建数据流图，分布式计算则是把抽象的计算流图，转化为实实在在的分布式计算任务，然后以并行计算的方式交付执行。
 
 在 Spark 的应用开发中，任何一个应用程序的入口，都是带有 SparkSession 的 main 函数。但有且仅有一个JVM进程运行这样的main函数，这个特殊的 JVM 进程，在 Spark 中有个专门的术语，叫作“Driver”。
@@ -335,10 +345,12 @@ Driver 最核心的作用在于，解析用户代码、构建计算流图，然�
 对于 reduceByKey 之前的所有操作，也就是 textFile、flatMap、filter、map 等，Driver 会把它们“捏合”成一份任务，然后一次性地把这份任务打包、分发给每一个 Executors。三个 Executors 接收到任务之后，先是对任务进行解析，把任务拆解成 textFile、flatMap、filter、map 这 4 个步骤，然后分别对自己负责的数据分片进行处理。之后就需要做分组聚合、计数操作，就必须进行刚刚说的 Shuffle 操作。在不同 Executors 完成单词的数据交换之后，Driver 继续创建并分发下一个阶段的任务，也就是按照单词做分组计数。
 
 ### Spark 调度系统 和 分布式计算
+
 想要理解分布式计算，就需要先理解spark 的调度，spark 的调度离不开上文提到的DAGScheduler、TaskScheduler 和 SchedulerBackend 也包括 Executors 中的的对象如 ExecutorBackend等。
 ![分布式计算组件](./pictures/分布式计算组件.webp)
 
 **DAGScheduler**:
+
 DAGScheduler把DAG 拆分为执行阶段 Stages，同时还要负责把 Stages 转化为任务集合 TaskSets。
 前面提到后 lazy Evaluation，只有在遇到Action 算子的时候才会回溯执行。
 所以 DAGScheduler是以 Actions 算子为起点，从后向前回溯 DAG，以 Shuffle 操作为边界去划分 Stages。以 Shuffle 为边界，从后向前以递归的方式，把逻辑上的计算图 DAG，转化成一个又一个 Stages。
@@ -356,6 +368,7 @@ DAGScheduler 的主要职责总结：
 3. 基于 Stages 创建 TaskSets，并将 TaskSets 提交给 TaskScheduler 请求调度。
 
 **SchedulerBackend**
+
 在分布式计算组件的图片中可以看到 SchedulerBackend 有两个作用，一是获取集群内可用资源，二是依次将分布式任务分发到Executors。 
 
 SchedulerBackend 用一个叫做 ExecutorDataMap 的数据结构，来记录每一个计算节点中 Executors 的资源状态。如下图
@@ -365,6 +378,7 @@ ExecutorDataMap 是一种 HashMap，它的 Key 是标记 Executor 的字符串�
 SchedulerBackend 是如何知道哪些Executor有空闲资源的呢？实际上 SchedulerBackend 与集群内所有 Executors 中的 ExecutorBackend 保持周期性通信，双方通过 LaunchedExecutor、RemoveExecutor、StatusUpdate 等消息来互通有无、变更可用计算资源。
 
 **TaskScheduler**
+
 DAGScheduler 生成任务，SchedulerBackend 管理Executors资源，TaskScheduler 怎负责把任务调度到有合适资源的Executors上。 
 
 TaskScheduler 是依据什么规则来挑选 Tasks 的呢？
@@ -396,6 +410,7 @@ Shuffle 会导致分布式数据集在集群内的分发，因而引入大量的
 在 Map 阶段，每个 Executors 先把自己负责的数据分区做初步聚合（又叫 Map 端聚合、局部聚合）；在 Shuffle 环节，不同的单词被分发到不同节点的 Executors 中；最后的 Reduce 阶段，Executors 以单词为 Key 做第二次聚合（又叫全局聚合），从而完成统计计数的任务。
 
 **shuffle 的中间文件**
+
 map阶段是通过shuffle来和reduce阶段进行数据交换的，通过生产与消费 Shuffle 中间文件的方式，来完成集群范围内的数据交换。
 在 Map 执行阶段，每个 Task 都会生成包含 data 文件与 index 文件的 Shuffle 中间文件。Shuffle 文件的生成，是以 Map Task 为粒度的，Map 阶段有多少个 Map Task，就会生成多少份 Shuffle 中间文件。index 文件标记了 data 文件中的哪些记录，应该由下游 Reduce 阶段中的哪些 Task 消费。 index 文件，是用来标记目标分区所属数据记录的起始索引。
 
@@ -406,18 +421,22 @@ map阶段是通过shuffle来和reduce阶段进行数据交换的，通过生产�
 P = Hash(Record Key) % N
 ```
 **Shuffle 中间文件的生成过程，分为如下几个步骤** shuffle write
+
 1. 对于数据分区中的数据记录，逐一计算其目标分区，然后填充内存数据结构；
 2. 当数据结构填满后，如果分区中还有未处理的数据记录，就对结构中的数据记录按（目标分区 ID，Key）排序，将所有数据溢出到临时文件，同时清空数据结构；
 3. 重复前 2 个步骤，直到分区中所有的数据记录都被处理为止；
 4. 对所有临时文件和内存数据结构中剩余的数据记录做归并排序，生成数据文件和索引文件。
 
 **shuffle read**
+
 对于每一个 Map Task 生成的中间文件，其中的目标分区数量是由 Reduce 阶段的任务数量（又叫并行度）决定的。
 
 ## spark 内存
+
 我们经常听到spark是内存计算，这是它的优势。那么spark 的内存是如何划分的呢？
 
 ### Spark 内存区域划分
+
 对于任意一个 Executor 来说，Spark 会把内存分为 4 个区域，分别是 Reserved Memory、User Memory、Execution Memory 和 Storage Memory。
 ![SparkMemory](./pictures/SparkMemory.webp)
 

@@ -1,4 +1,4 @@
-本文还是以一个例子来带大家了解 spark sql。数据是./exampledata/2011-2019小汽车摇号数据。 在这个目录下有 apply 和 lucky 两个子目录，apply 目录的内容是 2011-2019 年各个批次参与摇号的申请号码，而 lucky 目录包含的是各个批次中签的申请号码。 我们需要计算中签概率会不会随着倍率的增加而线性增长。 这里的倍率是申请次数。
+本文还是以一个例子来带大家了解 spark sql。无需仔细研究，先随便看看即可。
 
 ```
 import org.apache.spark.sql.DataFrame
@@ -39,16 +39,19 @@ result.collect
 ```
 
 ## DaraFrame
+
 SparkContext 通过 textFile API 把源数据转换为 RDD，而SparkSession通过read API把原数据转换成 DataFrame。DataFrame 和 RDD 有什么区别？
 1. 与 RDD 一样，DataFrame 也用来封装分布式数据集，它也有数据分区的概念，也是通过算子来实现不同 DataFrame 之间的转换，只不过 DataFrame 采用了一套与 RDD 算子不同的独立算子集。
 2. 在数据内容方面，与 RDD 不同，DataFrame 是一种带 Schema 的分布式数据集，因此，你可以简单地把 DataFrame 看作是数据库中的一张二维表。
 3. DataFrame 背后的计算引擎是 Spark SQL，而 RDD 的计算引擎是 Spark Core。
 
 ### 创建DataFrame
+
 创建 DataFrame 的方法有很多，Spark 支持多种数据源，按照数据来源进行划分，这些数据源可以分为如下几个大类：Driver 端自定义的数据结构、（分布式）文件系统、关系型数据库 RDBMS、关系型数据仓库、NoSQL 数据库，以及其他的计算引擎。
 ![DataFrameSource](./pictures/DataFrameSource.webp)
 
 **从 Driver 创建 DataFrame**
+
 前文提到 DataFrame相当于带有schema的RDD。所以 创建 DataFrame 的第一种方法，就是先创建 RDD，然后再给它加上Schema。这种方法比较的复杂，有如下四个步骤。
 1. 使用spark context 创建 RDD
 2. 创建schema
@@ -78,6 +81,7 @@ val dataFrame: DataFrame = spark.createDataFrame(rowRDD,schema)
 ```
 
 **toDF 方法**
+
 我们可以引入 spark.implicits 轻松实现RDD 到DataFrame 的转换，甚至是从seq 到DataFrame的转换。
 
 ```
@@ -100,6 +104,7 @@ dataFrame2.show
 ```
 
 **从文件系统创建 DataFrame**
+
 这是一种更为常用的方法，spark支持的文件系统非常多，无论是哪一种文件系统，spark 都要通过SparkSession 的 read API 来读取数据并创建 DataFrame。如下图所示：
 
 ![SparkSessionReadAPI](./pictures/SparkSessionReadAPI.webp)
@@ -109,6 +114,7 @@ dataFrame2.show
 3. 第 3 类参数是文件路径。 
 
 **从 CSV 创建 DataFrame**
+
 从 CSV 文件成功地创建 DataFrame，关键在于了解并熟悉与之有关的option选项。
 ![CSVOptiion](./pictures/CSVOption.webp)
 
@@ -162,6 +168,7 @@ val df: DataFrame = spark.read.format("orc").load(orcFilePath)
 ```
 
 **从 RDBMS 创建 DataFrame**
+
 以mysql 为例子，我们可以使用很多option 来实现从 mysql 创建 DataFrame。 在默认情况下，Spark 安装目录并没有提供与数据库连接有关的任何 Jar 包，因此，对于想要访问的数据库，不论是 MySQL、PostgreSQL，还是 Oracle、DB2，我们都需要把相关 Jar 包手工拷贝到 Spark 安装目录下的 Jars 文件夹。 
 还要在 spark-shell 命令或是 spark-submit 中，通过如下两个命令行参数，来告诉 Spark 相关 Jar 包的访问地址。
 –driver-class-path mysql-connector-java-version.jar
@@ -180,6 +187,7 @@ spark.read.format("jdbc")
 ```
 
 ## DataFrame 数据处理
+
 DataFrame 提供了两种方法做数据处理，sql 和 DataFrame开发算子。 
 
 ### sql 语言
@@ -206,10 +214,12 @@ DataFrame 的算子是非常多的，简单分类如下。
 ![DataFrame算子](./pictures/DataFrame算子.webp)
 
 **同源类算子**
+
 DataFrame 来自 RDD，与 RDD 具有同源性，因此 RDD 支持的大部分算子，DataFrame 都支持。
 ![同源类算子](./pictures/DataFrame同源算子.webp)
 
 **探索类算子**
+
 这类算子的作用，在于帮助开发者初步了解并认识数据，比如数据的模式（Schema）、数据的分布、数据的“模样”，等等。
 ![探索类算子](./pictures/DataFrame探索类算子.webp)
 
@@ -234,6 +244,7 @@ employeesDF.printSchema
 4. na，它的作用是选取 DataFrame 中的 null 数据，na 往往要结合 drop 或是 fill 来使用。employeesDF.na.drop 用于删除 DataFrame 中带 null 值的数据记录。而 employeesDF.na.fill(0) 则将 DataFrame 中所有的 null 值都自动填充为整数零。
 
 **转换类算子**
+
 转换类算子的主要用于数据的生成、提取与转换。
 
 ![转换类算子](./pictures/DataFrame转换类算子.webp)
@@ -315,6 +326,7 @@ employeesDF.withColumn("interest", explode($"interests")).show
 ```
 
 **分析类算子**
+
 在大多数的数据应用中，数据分析往往是最为关键的那环，甚至是应用本身的核心目的。
 ![分析类算子](./pictures/DataFrame分析类算子.webp)
 
