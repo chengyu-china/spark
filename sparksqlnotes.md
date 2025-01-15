@@ -427,3 +427,100 @@ aggResult.orderBy(desc("sum_salary"), asc("gender")).show
 在option方法中可以指定文件写入的mode， 文件写入mode 有 Append、Overwrite、ErrorIfExists、Ignore 这 4 种模式。
 
 ![sparkSessionWriteMode](./pictures/SparkSessionWriteMode.webp)
+
+
+## spark sql 的关联
+数据join的概念都比较熟悉，使用DataFrame实现join的命令如下图所示。 
+![DataFrameJoiin](./pictures/DataFrameJoin.webp)
+
+关联形式有很多种，如下图。
+![DataFrameJoinType](./pictures/DataFrameJoinType.webp)
+
+下面的code是使用DataFrame实现join的例子。
+
+```
+import spark.implicits._
+import org.apache.spark.sql.DataFrame
+ 
+# 创建员工信息表
+val seq = Seq((1, "Mike", 28, "Male"), (2, "Lily", 30, "Female"), (3, "Raymond", 26, "Male"), (5, "Dave", 36, "Male"))
+val employees: DataFrame = seq.toDF("id", "name", "age", "gender")
+
+# 创建薪资表
+val seq2 = Seq((1, 26000), (2, 30000), (4, 25000), (3, 20000))
+val salaries:DataFrame = seq2.toDF("id", "salary")
+
+# inner join 
+// 内关联
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "inner")
+jointDF.show
+
+# left join
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "left")
+jointDF.show
+ 
+# right join
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "right")
+jointDF.show
+
+# fullout join
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "full")
+jointDF.show
+
+# left semo join. left join 但是只显示左表的column
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "leftsemi")
+jointDF.show
+
+# Left Anti Join. left join 但是只保留左表的column，保留的数据是不满足join条件的数据。
+val jointDF: DataFrame = salaries.join(employees, salaries("id") === employees("id"), "leftanti")
+jointDF.show
+
+```
+### 关联机制 Spark Join Mechanisms
+
+Join 有 3 种实现机制，分别是 NLJ（Nested Loop Join）、SMJ（Sort Merge Join）和 HJ（Hash Join）。
+
+**NLJ（Nested Loop Join）** 
+性能比较差。但是 像 salaries(“id”) < employees(“id”) 这样的关联条件，HJ 和 SMJ 是无能为力的。相反，NLJ 既可以处理等值关联（Equi Join），也可以应付不等值关联（Non Equi Join）。
+所以是不是说明在join条件中最好不要出现 '>' '<' '>=' '<=' '!=' 等等？
+
+**SMJ（Sort Merge Join）**
+
+Sort Merge Join 首先会对数据进行排序。Sort Merge Join 就没有内存方面的限制。不论是排序、还是合并，SMJ 都可以利用磁盘来完成计算。所以，在稳定性这方面，SMJ 更胜一筹。如果准备参与 Join 的两张表是有序表，那么这个时候采用 SMJ 算法来实现关联简直是再好不过了。
+
+**HJ（Hash Join）**
+
+Hash Join 的执行效率最高，不过需要先在内存中构建出哈希表，对于内存的要求比较高，适用于内存能够容纳基表(右表)数据的计算场景。
+
+### 分布式环境下的join
+在分布式环境中，我们需要保证在join的时候，左表和右边满足join keys的记录在同一个executor中。能满足这个前提的途径只有两个：Shuffle 和 Broadcast。 
+
+**shuffle join**
+
+默认情况下，spark 使用的是 shuffle join 来完成分布式环境的数据关联。 根据Join Keys 计算哈希值，并将哈希值对并行度进行取模 便可以保证左表和右边满足join keys的记录在同一个executor中。 然后在reduce 阶段，Reduce Task 就可以使用 HJ、SMJ、或是 NLJ 算法在 Executors 内部完成数据关联的计算。
+
+**broadcast join**
+
+就是把小表广播出去。仅仅分发体量较小的数据表来完成数据关联，执行性能显然要高效得多。
+
+```
+import org.apache.spark.sql.functions.broadcast
+ 
+// 创建员工表的广播变量
+val bcEmployees = broadcast(employees)
+ 
+// 内关联，PS：将原来的employees替换为bcEmployees
+val jointDF: DataFrame = salaries.join(bcEmployees, salaries("id") === employees("id"), "inner")
+```
+
+不论是 Shuffle Join，还是 Broadcast Join，一旦数据分发完毕，理论上可以采用 HJ、SMJ 和 NLJ 这 3 种实现机制中的任意一种，完成 Executors 内部的数据关联。 
+两种分发模式，与三种实现机制，它们组合起来，总共有 6 种分布式 Join 策略。spark 支持其中5种。如下图蓝色部分。
+![sparkJoin策略](./pictures/SparkJoin策略.webp).
+
+对于等值关联（Equi Join），Spark SQL 优先考虑采用 Broadcast HJ 策略，其次是 Shuffle SMJ，最次是 Shuffle HJ。对于不等值关联（Non Equi Join），Spark SQL 优先考虑 Broadcast NLJ，其次是 Shuffle NLJ。不论是等值关联、还是不等值关联，只要 Broadcast Join 的前提条件成立，Spark SQL 一定会优先选择 Broadcast Join 相关的策略
+![join策略对比](./pictures/join策略对比.webp)
+
+Broadcast join 的性能是最好的，但是不是所有的join 都能使用broascast join。 我们知道 只有Driver 可以把小表广播出去，因此Broadcast join 需要Driver 有足够的内存。 但是如果需要被广播的表太大的话，广播这个表的时间就会很久。所以我们一般是广播小表。 我们之前在工作中有使用调参的形式，出发broadcast join。
+
+
+## spark sql 参数配置
