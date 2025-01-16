@@ -520,7 +520,68 @@ val jointDF: DataFrame = salaries.join(bcEmployees, salaries("id") === employees
 对于等值关联（Equi Join），Spark SQL 优先考虑采用 Broadcast HJ 策略，其次是 Shuffle SMJ，最次是 Shuffle HJ。对于不等值关联（Non Equi Join），Spark SQL 优先考虑 Broadcast NLJ，其次是 Shuffle NLJ。不论是等值关联、还是不等值关联，只要 Broadcast Join 的前提条件成立，Spark SQL 一定会优先选择 Broadcast Join 相关的策略
 ![join策略对比](./pictures/join策略对比.webp)
 
-Broadcast join 的性能是最好的，但是不是所有的join 都能使用broascast join。 我们知道 只有Driver 可以把小表广播出去，因此Broadcast join 需要Driver 有足够的内存。 但是如果需要被广播的表太大的话，广播这个表的时间就会很久。所以我们一般是广播小表。 我们之前在工作中有使用调参的形式，出发broadcast join。
+Broadcast join 的性能是最好的，但是不是所有的join 都能使用broascast join。 我们知道 只有Driver 可以把小表广播出去，因此Broadcast join 需要Driver 有足够的内存。 但是如果需要被广播的表太大的话，广播这个表的时间就会很久。所以我们一般是广播小表。 我们之前在工作中有使用调参的形式，触发broadcast join。
 
 
 ## spark sql 参数配置
+**Broadcast Join**
+
+在大表和小表join的case 当中，我们可以参数，让spark 把小表广播出去，从而使用broadcast join。 参数如下。
+spark.sql.autoBroadcastJoinThreshold 小表的尺寸必须小于该值，才能BroadcastJoin。 参数默认值是10MB。
+```
+set spark.sql.autoBroadcastJoinThreshold=2G
+```
+**AQE:Adaptive Query Execution** 
+
+AQE: “自适应查询执行”。它包含了 3 个动态优化特性，分别是 Join 策略调整、自动分区合并和自动倾斜处理。 AQE默认是关闭的，因此想要使用这个特性，需要先开启AQE。
+```
+set spark.sql.adaptive.enabled=true
+```
+1. Join 策略调整: Join 策略调整指的就是 Spark SQL 在运行时动态地将原本的 Shuffle Join 策略，调整为执行更加高效的 Broadcast Join。具体来说，每当 DAG 中的 Map 阶段执行完毕，Spark SQL 就会结合 Shuffle 中间文件的统计信息，重新计算 Reduce 阶段数据表的存储大小。如果发现基表尺寸小于广播阈值，那么 Spark SQL 就把下一阶段的 Shuffle Join 调整为 Broadcast Join。
+
+2. 自动分区合并: 顾名思义，就是把小风数据分区合并成大的数据分区。Spark 如何判断分区是大是小？小分区也不能一直合并，什么时候停止？ Spark SQL 事先并不去判断哪些分区是不是足够小，而是按照分区的编号依次进行扫描，当扫描过的数据体量超过了“目标尺寸”时，就进行一次合并。spark.sql.adaptive.advisoryPartitionSizeInBytes 合并后的目标尺寸。 spark.sql.adaptive.coalescePartitions.minPartitionNum 分区合并后，并行读不能低于该值。
+```
+set spark.sql.adaptive.advisoryPartitionSizeInBytes=256M;
+set spark.sql.adaptive.coalescePartitions.minPartitionNum=10; 
+```
+3. 自动倾斜处理: 自动合并是处理小分区数据，自动倾斜处理则是处理打分区数据。第一步是检测并判定体量较大的倾斜分区，第二部则是把大分区拆分为小分区。
+首先，Spark SQL 对所有数据分区按照存储大小做排序，取中位数作为基数。然后，将中位数乘以 set spark.sql.adaptive.skewJoin.skewedPartitionFactor 指定的比例系数，得到判定阈值。凡是存储尺寸大于判定阈值的数据分区，都有可能被判定为倾斜分区。 set spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes 这个参数则定义了数据倾斜分区的最低阈值。只有数据倾斜分区大于这个阈值的分区，才会被认定为倾斜分区。 之后才会按照advisoryPartitionSizeInBytes 进行分区拆分。
+```
+set spark.sql.adaptive.skewJoin.skewedPartitionFactor=0.8;
+set spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes=5G;
+set spark.sql.adaptive.advisoryPartitionSizeInBytes=256M;
+
+```
+![SparkSQLAQE](./pictures/SparkSqlAQE.webp)
+
+## Spark UI
+当spark作业失败或者性能较差的时候，我们会通过SparkUI来分析问题。Spark UI的导航栏如下。
+![SparkUI](./pictures/SparkUI.webp)
+
+### Executors
+Executors 页面清清楚楚地记录着每一个 Executor 消耗的数据量，以及它们对 CPU、内存与磁盘等硬件资源的消耗。基于这些信息，我们可以轻松判断不同 Executors 之间是否存在负载不均衡的情况，进而判断应用中是否存在数据倾斜的隐患。 Executors 的页面如下图所示。
+![SparkUIExecutors](./pictures/SparkUIExecutors.webp)
+
+每个Metrics的含义如下图所示。
+![ExecutorsMetrics](./pictures/SparkUIExecutorsMetrics.webp)
+
+### Environment
+ENV 页面比较简单，而且我们一般只关注 Spark Properties。 这里是spark 配置参数的细节，帮助判断是否需要调整 spark conf。 
+
+
+### Storage
+Storage 详情页，记录着每一个分布式缓存（RDD Cache、DataFrame Cache）的细节，包括缓存级别、已缓存的分区数、缓存比例、内存大小与磁盘大小。Metrics 的含义如下图。
+![SparkUIStorage](./pictures/SparkUIStorage.webp)
+
+
+### SQL
+Spark UI SQL 页面，以 Actions 为单位，记录着每个 Action 对应的 Spark SQL 执行计划。我们需要点击才能看到具体的信息。
+
+
+
+### JOBS
+对于 Jobs 页面来说，Spark UI 也是以 Actions 为粒度，记录着每个 Action 对应作业的执行情况。Spark UI 会把数据的读取、访问与移动，也看作是一类“Actions”。
+
+
+### Stages
+在 Stages 页面，Spark UI 罗列了应用中涉及的所有 Stages，这些 Stages 分属于不同的作业。要想查看哪些 Stages 隶属于哪个 Job，还需要从 Jobs 的 Descriptions 二级入口进入查看。
