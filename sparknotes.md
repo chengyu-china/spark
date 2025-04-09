@@ -1,6 +1,7 @@
 # spark notes
 本文以word count 为例，介绍spark的基础知识。
 
+
 ## word count 
 
 Word Count 的初衷是对文件中的单词做统计计数，打印出频次最高的 5 个词汇。首先我们要准备好数据文件(./exampledata/wikiOfSpark.txt)。然后读取文件，文件往往以行读取，word count 是对单词做统计，所以需要对行数据进行分词处理。然后就可以对单词做分组计数。 
@@ -33,7 +34,9 @@ val wordCounts: RDD[(String, Int)] = kvRDD.reduceByKey((x, y) => x + y)
 wordCounts.map{case (k, v) => (v, k)}.sortByKey(false).take(5)
 
 ```
-代码中比较重要的一个概念是 **RDD**: Resilient Distributed Dataset，意思是“弹性分布式数据集”。 可以理解成是spark对分布式数据抽象的类，这个类有一系列方法，比如code 中的 flatMap，filter，map，reduceByKey，sortByKey，take。
+
+代码中比较重要的一个概念是 **RDD**: Resilient Distributed Dataset，意思是“弹性分布式数据集”。
+可以理解成是spark对分布式数据抽象的类，这个类有一系列方法，比如code 中的 flatMap，filter，map，reduceByKey，sortByKey，take。
 
 ## RDD
 RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊括所有内存中和磁盘中的分布式数据实体。应用程序在 Spark 内部最终都会转化为 RDD 之上的分布式计算。在分布式计算环境中，一份完整的数据集，会按照某种规则切割成多份数据分片。这些数据分片被均匀地分发给集群内不同的计算节点和执行进程，从而实现分布式并行计算。RDD 中承载数据的基本单元是数据分片
@@ -138,7 +141,7 @@ RDD[(Key, Value)]转换为 => RDD[(Key, Value 集合)]
 import org.apache.spark.rdd.RDD
 ...
 
-val kvRDD: RDD[(String, String)] = cleanWordRDD.map(word => (word, 1))
+val kvRDD: RDD[(String, int)] = cleanWordRDD.map(word => (word, 1))
 // 按照单词做分组收集
 val words: RDD[(String, Iterable[int])] = kvRDD.groupByKey()
 
