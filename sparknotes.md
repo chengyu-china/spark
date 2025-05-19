@@ -45,7 +45,8 @@ RDD 是一种抽象，是 Spark 对于分布式数据集的抽象，它用于囊
 1. **partitions**:数据分片。数据分片的分布，是由 RDD 的 partitioner 决定的。因此，RDD 的 partitions 属性，与它的 partitioner 属性是强相关的
 2. **partitioner**:分片切割规则，这个属性定义了把原始数据集切割成数据分片的切割规则
 3. **dependencies**:RDD 依赖，在数据形态的转换过程中，每个 RDD 都会通过 dependencies 属性来记录它所依赖的前一个、或多个 RDD，简称“父 RDD”。与此同时，RDD 使用 compute 属性，来记录从父 RDD 到当前 RDD 的转换操作。
-![DRRdependences](./pictures/RDDdependence.webp)
+![DRRdependences](./pictures/RDDdependence.webp) 
+
 4. **compute**:转换函数, 例如 word count 中的flatMap，filter，map等。
 
 **RDD 算子分类**
@@ -487,3 +488,28 @@ wordCounts.saveAsTextFile(targetPath)
 
 ## 广播变量和累加器。
 不想整理，没意思。
+
+
+
+
+
+## 宽窄依赖
+
+在 Apache Spark 中，RDD（弹性分布式数据集）之间的依赖关系分为两种主要类型：窄依赖（Narrow Dependency）和宽依赖（Wide Dependency）。
+
+窄依赖（Narrow Dependency）：
+定义：父 RDD 的每个分区最多被子 RDD 的一个分区所依赖。
+特点：
+  - 一对一依赖：如 map、filter 等操作
+  - 多对一依赖：如 coalesce 操作（分区合并）
+  - 没有数据在不同节点间的移动（shuffle）
+  - 执行效率高，可以在单个节点上完成计算
+
+宽依赖（Wide Dependency）
+定义：父 RDD 的每个分区可能被子 RDD 的多个分区所依赖。
+特点：
+  - 也称为 shuffle 依赖
+  - 父 RDD 的一个分区数据可能被分发到子 RDD 的多个分区
+  - 需要跨节点数据传输（shuffle）
+  - 执行代价较高，可能涉及磁盘 I/O、网络传输等
+  - 是划分 stage 的边界
